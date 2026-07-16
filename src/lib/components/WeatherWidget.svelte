@@ -126,6 +126,7 @@
 		gap: 1rem;
 		width: 100%;
 		text-align: left;
+		color: var(--text);
 		background: var(--surface);
 		border: 1px solid var(--border);
 		border-radius: var(--radius);

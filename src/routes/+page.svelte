@@ -1,21 +1,10 @@
 <script lang="ts">
 	import { settings } from '$lib/settings.svelte';
-	import {
-		fetchPullRequests,
-		computeStats,
-		type PullRequest,
-		type PullRequestStats
-	} from '$lib/github';
+	import { prStore } from '$lib/pr-store.svelte';
 	import SetupModal from '$lib/components/SetupModal.svelte';
 	import PrItem from '$lib/components/PrItem.svelte';
 	import Shortcuts from '$lib/components/Shortcuts.svelte';
 	import WeatherWidget from '$lib/components/WeatherWidget.svelte';
-
-	let prs = $state<PullRequest[]>([]);
-	let stats = $state<PullRequestStats>({ open: 0, drafts: 0, merged: 0, closed: 0 });
-	let loading = $state(false);
-	let error = $state('');
-	let lastLoaded = $state<number | null>(null);
 
 	let setupOpen = $state(!settings.configured);
 	let now = $state(new Date());
@@ -40,27 +29,8 @@
 		now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 	);
 
-	async function load() {
-		if (!settings.configured) return;
-		loading = true;
-		error = '';
-		try {
-			prs = await fetchPullRequests(
-				settings.current.username,
-				settings.current.token,
-				settings.current.repos
-			);
-			stats = computeStats(prs);
-			lastLoaded = Date.now();
-		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load pull requests.';
-		} finally {
-			loading = false;
-		}
-	}
-
 	$effect(() => {
-		if (settings.configured) load();
+		if (settings.configured && prStore.lastLoaded === null) prStore.load();
 	});
 </script>
 
@@ -68,7 +38,7 @@
 	<title>New Tab</title>
 </svelte:head>
 
-<SetupModal bind:open={setupOpen} onsaved={load} />
+<SetupModal bind:open={setupOpen} onsaved={() => prStore.load()} />
 
 <main class:blurred={setupOpen}>
 	<header class="top">
@@ -91,7 +61,7 @@
 		<section class="prs">
 			<div class="section-head">
 				<h2>Pull requests from the last 7 days</h2>
-				<button class="refresh" onclick={load} disabled={loading}>
+				<button class="refresh" onclick={() => prStore.load()} disabled={prStore.loading}>
 					<svg
 						width="15"
 						height="15"
@@ -101,7 +71,7 @@
 						stroke-width="2"
 						stroke-linecap="round"
 						stroke-linejoin="round"
-						class:spinning={loading}
+						class:spinning={prStore.loading}
 					>
 						<path d="M23 4v6h-6M1 20v-6h6" />
 						<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -111,36 +81,78 @@
 			</div>
 
 			<div class="stats">
-				<div class="stat">
+				<button
+					type="button"
+					class="stat"
+					class:active={prStore.filter === 'open'}
+					aria-pressed={prStore.filter === 'open'}
+					onclick={() => prStore.toggleFilter('open')}
+				>
 					<span class="stat-label">Open PRs</span>
-					<span class="stat-value">{stats.open}</span>
-				</div>
-				<div class="stat">
+					<span class="stat-value">{prStore.stats.open}</span>
+				</button>
+				<button
+					type="button"
+					class="stat"
+					class:active={prStore.filter === 'drafts'}
+					aria-pressed={prStore.filter === 'drafts'}
+					onclick={() => prStore.toggleFilter('drafts')}
+				>
 					<span class="stat-label">Drafts</span>
-					<span class="stat-value">{stats.drafts}</span>
-				</div>
-				<div class="stat">
+					<span class="stat-value">{prStore.stats.drafts}</span>
+				</button>
+				<button
+					type="button"
+					class="stat"
+					class:active={prStore.filter === 'merged'}
+					aria-pressed={prStore.filter === 'merged'}
+					onclick={() => prStore.toggleFilter('merged')}
+				>
 					<span class="stat-label">Merged</span>
-					<span class="stat-value">{stats.merged}</span>
-				</div>
-				<div class="stat">
+					<span class="stat-value">{prStore.stats.merged}</span>
+				</button>
+				<button
+					type="button"
+					class="stat"
+					class:active={prStore.filter === 'closed'}
+					aria-pressed={prStore.filter === 'closed'}
+					onclick={() => prStore.toggleFilter('closed')}
+				>
 					<span class="stat-label">Closed</span>
-					<span class="stat-value">{stats.closed}</span>
-				</div>
+					<span class="stat-value">{prStore.stats.closed}</span>
+				</button>
 			</div>
 
-			{#if error}
-				<div class="notice error">{error}</div>
+			{#if prStore.repoList.length > 0}
+				<div class="repo-badges">
+					{#each prStore.repoList as repo (repo)}
+						<button
+							type="button"
+							class="repo-badge"
+							class:active={prStore.repoFilter === repo}
+							aria-pressed={prStore.repoFilter === repo}
+							onclick={() => prStore.toggleRepoFilter(repo)}
+						>
+							{repo}
+						</button>
+					{/each}
+				</div>
 			{/if}
 
-			{#if loading && prs.length === 0}
+			{#if prStore.error}
+				<div class="notice error">{prStore.error}</div>
+			{/if}
+
+			{#if prStore.loading && prStore.prs.length === 0}
 				<div class="notice">Loading pull requests…</div>
-			{:else if prs.length === 0 && !error}
+			{:else if prStore.prs.length === 0 && !prStore.error}
 				<div class="notice">No pull requests in the last 7 days.</div>
+			{:else if prStore.filteredPrs.length === 0}
+				<div class="notice">No matching pull requests.</div>
 			{:else}
 				<ul class="pr-list">
-					{#each prs as pr (pr.id)}
-						<PrItem {pr} />
+					{#each prStore.filteredPrs as pr (pr.id)}
+						<PrItem {pr} ci={prStore.ciStatuses[pr.id]} />
 					{/each}
 				</ul>
 			{/if}
@@ -288,6 +300,24 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
+		background: none;
+		border-top: none;
+		border-bottom: none;
+		border-left: none;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		cursor: pointer;
+		transition: background 0.15s;
+	}
+
+	.stat:hover {
+		background: var(--surface-hover);
+	}
+
+	.stat.active {
+		background: var(--surface-hover);
+		box-shadow: inset 0 -2px 0 var(--text);
 	}
 
 	.stat:last-child {
@@ -303,6 +333,39 @@
 		font-size: 1.7rem;
 		font-weight: 700;
 		letter-spacing: -0.02em;
+	}
+
+	.repo-badges {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.repo-badge {
+		background: var(--surface);
+		border: 1px solid var(--border-strong);
+		border-radius: 999px;
+		padding: 0.35rem 0.85rem;
+		font-size: 0.82rem;
+		font-weight: 500;
+		color: var(--text-muted);
+		cursor: pointer;
+		transition:
+			background 0.15s,
+			color 0.15s,
+			border-color 0.15s;
+	}
+
+	.repo-badge:hover {
+		color: var(--text);
+		background: var(--surface-hover);
+	}
+
+	.repo-badge.active {
+		color: var(--text);
+		background: var(--surface-hover);
+		border-color: var(--text);
 	}
 
 	.pr-list {

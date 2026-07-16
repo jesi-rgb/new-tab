@@ -5,34 +5,53 @@
 # Prerequisites:
 #   - unikraft CLI installed:  https://unikraft.com/docs/cli/unikraft
 #   - a running BuildKit builder (Docker is the easiest way)
-#   - logged in:  unikraft login
+#   - logged in:  unikraft login   (org must own the image namespace below)
 #
 # Usage:
-#   ./deploy.sh                 # build + run with defaults
-#   ORG=my-org ./deploy.sh      # override the image org/namespace
-#   METRO=lon0 ./deploy.sh      # override the metro (default: fra)
+#   ./deploy.sh
 #
 set -euo pipefail
 
-# --- Config (override via environment variables) -----------------------------
-ORG="${ORG:-$(whoami)}"                 # image namespace / org
-NAME="${NAME:-new-tab}"                 # app + image name
-METRO="${METRO:-fra}"                   # Unikraft Cloud metro (e.g. fra, lon0, dal0)
-MEMORY="${MEMORY:-512M}"                # instance memory
-PORT_MAP="${PORT_MAP:-443:3000/tls+http}"  # adapter-node listens on 3000
-COOLDOWN="${COOLDOWN:-1000}"            # scale-to-zero cooldown (ms)
+SERVICE_NAME="new-tab-svc"
+INSTANCE_NAME="new-tab"
+METRO="fra"
+IMAGE="jesi-rgb/new-tab:latest"
+DOMAIN="new-tab"
 
-IMAGE="${ORG}/${NAME}:latest"
+# Create the service if it doesn't exist yet.
+# The service holds the stable domain — only needs to run once.
+if ! unikraft services list -o quiet 2>/dev/null | grep -q "/$SERVICE_NAME$"; then
+  echo "Creating service $SERVICE_NAME..."
+  unikraft services create \
+    --name "$SERVICE_NAME" \
+    --metro "$METRO" \
+    --domains "$DOMAIN" \
+    --services 443:3000/tls+http
+else
+  echo "Service $SERVICE_NAME already exists, skipping."
+fi
 
-echo "==> Building ${IMAGE} (metro: ${METRO})"
-unikraft build . --output "${IMAGE}"
+# Remove the existing instance and wait until it's gone.
+if unikraft instances list -o quiet 2>/dev/null | grep -q "/$INSTANCE_NAME$"; then
+  echo "Removing existing instance..."
+  unikraft instances delete "$INSTANCE_NAME"
+  echo "Waiting for instance to be removed..."
+  unikraft instances wait "$INSTANCE_NAME" --state stopped 2>/dev/null || true
+fi
 
-echo "==> Deploying ${IMAGE}"
-unikraft run \
-  --scale-to-zero "policy=on,cooldown-time=${COOLDOWN}" \
-  --metro "${METRO}" \
-  -p "${PORT_MAP}" \
-  -m "${MEMORY}" \
-  --image "${IMAGE}"
+echo "Building image..."
+unikraft build . --output "$IMAGE"
 
-echo "==> Done. List instances with: unikraft instances list"
+echo "Deploying..."
+unikraft instances create \
+  --name "$INSTANCE_NAME" \
+  --metro "$METRO" \
+  --image "$IMAGE" \
+  --service "$SERVICE_NAME" \
+  --scale-to-zero policy=on \
+  -m 512M \
+  --autostart
+
+echo ""
+echo "Done. Service domain:"
+unikraft services get "$SERVICE_NAME" -f domains
