@@ -1,6 +1,6 @@
 import {
 	fetchPullRequests,
-	fetchPrHeadSha,
+	fetchPrHead,
 	fetchCiStatus,
 	computeStats,
 	prCategory,
@@ -20,6 +20,7 @@ class PrStore {
 	filter = $state<PrCategory | null>(null);
 	repoFilter = $state<string | null>(null);
 	ciStatuses = $state<Record<number, CiStatus | undefined>>({});
+	branches = $state<Record<number, string | undefined>>({});
 
 	repoList = $derived.by(() => {
 		const seen = new Set<string>();
@@ -31,6 +32,20 @@ class PrStore {
 		this.prs.filter(
 			(pr) =>
 				(!this.filter || prCategory(pr) === this.filter) &&
+				(!this.repoFilter || pr.repo === this.repoFilter)
+		)
+	);
+
+	/**
+	 * PRs where a review is still pending from the user ("needs my attention").
+	 * Only surfaces still-open PRs, and respects the active repo filter.
+	 */
+	reviewRequestedPrs = $derived(
+		this.prs.filter(
+			(pr) =>
+				pr.reviewRequested &&
+				pr.state === 'open' &&
+				!pr.merged &&
 				(!this.repoFilter || pr.repo === this.repoFilter)
 		)
 	);
@@ -56,6 +71,7 @@ class PrStore {
 			this.stats = computeStats(this.prs);
 			this.lastLoaded = Date.now();
 			this.ciStatuses = {};
+			this.branches = {};
 			this.loadCiStatuses();
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to load pull requests.';
@@ -65,25 +81,30 @@ class PrStore {
 	}
 
 	/**
-	 * Fetch CI status for non-merged, non-closed PRs in the background.
-	 * Updates ciStatuses progressively as each result comes in.
+	 * Fetch head info (branch name, and CI status for non-merged/closed PRs)
+	 * in the background. Updates state progressively as each result comes in.
 	 */
 	private loadCiStatuses() {
 		const token = settings.current.token;
-		const candidates = this.prs.filter((pr) => {
-			const cat = prCategory(pr);
-			return (cat === 'open' || cat === 'drafts') && pr.pullUrl;
-		});
+		const candidates = this.prs.filter((pr) => pr.pullUrl);
 
 		for (const pr of candidates) {
 			(async () => {
 				try {
-					const sha = await fetchPrHeadSha(pr.pullUrl!, token);
-					if (!sha) return;
-					const status = await fetchCiStatus(...(pr.repo.split('/') as [string, string]), sha, token);
+					const head = await fetchPrHead(pr.pullUrl!, token);
+					if (!head) return;
+					this.branches = { ...this.branches, [pr.id]: head.ref };
+
+					const cat = prCategory(pr);
+					if (cat !== 'open' && cat !== 'drafts') return;
+					const status = await fetchCiStatus(
+						...(pr.repo.split('/') as [string, string]),
+						head.sha,
+						token
+					);
 					this.ciStatuses = { ...this.ciStatuses, [pr.id]: status };
 				} catch {
-					// Ignore failures (e.g. rate limiting); simply omit the CI badge.
+					// Ignore failures (e.g. rate limiting); simply omit the CI badge / branch.
 				}
 			})();
 		}

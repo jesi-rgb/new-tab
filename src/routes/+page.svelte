@@ -139,6 +139,21 @@
 				</div>
 			{/if}
 
+			{#if prStore.reviewRequestedPrs.length > 0}
+				<div class="review-section">
+					<div class="review-head">
+						<span class="review-dot"></span>
+						<h3>Needs your review</h3>
+						<span class="review-count">{prStore.reviewRequestedPrs.length}</span>
+					</div>
+					<ul class="pr-list review-list">
+						{#each prStore.reviewRequestedPrs as pr (pr.id)}
+							<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]} />
+						{/each}
+					</ul>
+				</div>
+			{/if}
+
 			{#if prStore.error}
 				<div class="notice error">{prStore.error}</div>
 			{/if}
@@ -152,7 +167,7 @@
 			{:else}
 				<ul class="pr-list">
 					{#each prStore.filteredPrs as pr (pr.id)}
-						<PrItem {pr} ci={prStore.ciStatuses[pr.id]} />
+						<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]} />
 					{/each}
 				</ul>
 			{/if}
@@ -366,6 +381,48 @@
 		color: var(--text);
 		background: var(--surface-hover);
 		border-color: var(--text);
+	}
+
+	.review-section {
+		margin-bottom: 1.5rem;
+	}
+
+	.review-head {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+		margin-bottom: 0.75rem;
+	}
+
+	.review-head h3 {
+		margin: 0;
+		font-size: 1.05rem;
+		font-weight: 600;
+		letter-spacing: -0.01em;
+	}
+
+	.review-dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 999px;
+		background: #d29922;
+		box-shadow: 0 0 0 3px rgba(210, 153, 34, 0.18);
+	}
+
+	.review-count {
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--text-muted);
+		background: var(--surface-hover);
+		border-radius: 999px;
+		padding: 0.1rem 0.55rem;
+	}
+
+	.review-list {
+		border-color: rgba(210, 153, 34, 0.45);
+		box-shadow:
+			0 0 0 1px rgba(210, 153, 34, 0.15),
+			var(--shadow);
 	}
 
 	.pr-list {

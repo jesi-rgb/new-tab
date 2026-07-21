@@ -10,6 +10,7 @@ export type PullRequest = {
 	updatedAt: string;
 	labels: string[];
 	pullUrl: string | null;
+	reviewRequested: boolean;
 };
 
 export type CheckConclusion =
@@ -73,26 +74,14 @@ function sevenDaysAgoISO(): string {
 	return d.toISOString().slice(0, 10);
 }
 
-/**
- * Fetch pull requests involving the user (author, assignee, mentions, review requests)
- * updated in the last 7 days. Optionally scope to specific repos.
- */
-export async function fetchPullRequests(
-	username: string,
-	token: string,
-	repos: string[]
-): Promise<PullRequest[]> {
-	const since = sevenDaysAgoISO();
-	const qParts = ['is:pr', `involves:${username}`, `updated:>=${since}`];
+function repoScopeQuery(repos: string[]): string {
+	if (repos.length === 0) return '';
+	return ' ' + repos.map((r) => `repo:${r}`).join(' ');
+}
 
-	if (repos.length > 0) {
-		const repoQuery = repos.map((r) => `repo:${r}`).join(' ');
-		qParts.push(repoQuery);
-	}
-
-	const q = qParts.join(' ');
+async function searchIssues(query: string, token: string): Promise<SearchItem[]> {
 	const url = `https://api.github.com/search/issues?q=${encodeURIComponent(
-		q
+		query
 	)}&sort=updated&order=desc&per_page=50`;
 
 	const headers: Record<string, string> = {
@@ -112,8 +101,42 @@ export async function fetchPullRequests(
 	}
 
 	const data = (await res.json()) as SearchResponse;
+	return data.items;
+}
 
-	return data.items.map((item) => ({
+/**
+ * Fetch pull requests involving the user (author, assignee, mentions, review requests)
+ * updated in the last 7 days. Optionally scope to specific repos.
+ *
+ * A second search identifies PRs where a review is still pending from the user
+ * (`review-requested:`), which is used to flag `reviewRequested` on each result.
+ */
+export async function fetchPullRequests(
+	username: string,
+	token: string,
+	repos: string[]
+): Promise<PullRequest[]> {
+	const since = sevenDaysAgoISO();
+	const scope = repoScopeQuery(repos);
+
+	const involvesQuery = `is:pr involves:${username} updated:>=${since}${scope}`;
+	const reviewQuery = `is:pr review-requested:${username} updated:>=${since}${scope}`;
+
+	const [involvesItems, reviewItems] = await Promise.all([
+		searchIssues(involvesQuery, token),
+		searchIssues(reviewQuery, token)
+	]);
+
+	const reviewRequestedIds = new Set(reviewItems.map((item) => item.id));
+
+	// Merge both result sets (review-requested PRs may fall outside the
+	// involves list in edge cases), deduping by id.
+	const byId = new Map<number, SearchItem>();
+	for (const item of [...involvesItems, ...reviewItems]) {
+		byId.set(item.id, item);
+	}
+
+	return [...byId.values()].map((item) => ({
 		id: item.id,
 		number: item.number,
 		title: item.title,
@@ -124,7 +147,8 @@ export async function fetchPullRequests(
 		merged: Boolean(item.pull_request?.merged_at),
 		updatedAt: item.updated_at,
 		labels: item.labels.map((l) => l.name),
-		pullUrl: item.pull_request?.url ?? null
+		pullUrl: item.pull_request?.url ?? null,
+		reviewRequested: reviewRequestedIds.has(item.id)
 	}));
 }
 
@@ -223,6 +247,7 @@ export async function fetchPullRequestDetail(
 		updatedAt: item.updated_at,
 		labels: item.labels.map((l) => l.name),
 		pullUrl: null,
+		reviewRequested: false,
 		body: item.body,
 		author: item.user.login,
 		authorAvatar: item.user.avatar_url,
@@ -326,10 +351,13 @@ export async function fetchCiStatus(
 }
 
 /**
- * Fetch the head commit SHA for a pull request given its API URL
- * (as returned by the search API's `pull_request.url` field).
+ * Fetch the head commit info (SHA + branch name) for a pull request given
+ * its API URL (as returned by the search API's `pull_request.url` field).
  */
-export async function fetchPrHeadSha(pullUrl: string, token: string): Promise<string | null> {
+export async function fetchPrHead(
+	pullUrl: string,
+	token: string
+): Promise<{ sha: string; ref: string } | null> {
 	const headers: Record<string, string> = {
 		Accept: 'application/vnd.github+json',
 		'X-GitHub-Api-Version': '2022-11-28'
@@ -339,8 +367,9 @@ export async function fetchPrHeadSha(pullUrl: string, token: string): Promise<st
 	const res = await fetch(pullUrl, { headers });
 	if (!res.ok) return null;
 
-	const data = (await res.json()) as { head?: { sha?: string } };
-	return data.head?.sha ?? null;
+	const data = (await res.json()) as { head?: { sha?: string; ref?: string } };
+	if (!data.head?.sha || !data.head?.ref) return null;
+	return { sha: data.head.sha, ref: data.head.ref };
 }
 
 export function relativeTime(iso: string): string {
