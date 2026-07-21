@@ -29,11 +29,12 @@ class PrStore {
 	});
 
 	filteredPrs = $derived(
-		this.prs.filter(
-			(pr) =>
-				(!this.filter || prCategory(pr) === this.filter) &&
-				(!this.repoFilter || pr.repo === this.repoFilter)
-		)
+		this.prs.filter((pr) => {
+			const cat = prCategory(pr);
+			if (this.filter) return cat === this.filter && (!this.repoFilter || pr.repo === this.repoFilter);
+			// By default, hide merged/closed PRs unless explicitly selected via the filter.
+			return cat !== 'merged' && cat !== 'closed' && (!this.repoFilter || pr.repo === this.repoFilter);
+		})
 	);
 
 	/**
