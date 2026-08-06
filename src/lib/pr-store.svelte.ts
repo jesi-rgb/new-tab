@@ -2,12 +2,14 @@ import {
 	fetchPullRequests,
 	fetchPrHead,
 	fetchCiStatus,
+	fetchDashboardAccess,
 	computeStats,
 	prCategory,
 	type PullRequest,
 	type PullRequestStats,
 	type PrCategory,
-	type CiStatus
+	type CiStatus,
+	type DashboardAccess
 } from './github';
 import { settings } from './settings.svelte';
 
@@ -21,6 +23,7 @@ class PrStore {
 	repoFilter = $state<string | null>(null);
 	ciStatuses = $state<Record<number, CiStatus | undefined>>({});
 	branches = $state<Record<number, string | undefined>>({});
+	dashboards = $state<Record<number, DashboardAccess | undefined>>({});
 
 	repoList = $derived.by(() => {
 		const seen = new Set<string>();
@@ -73,7 +76,9 @@ class PrStore {
 			this.lastLoaded = Date.now();
 			this.ciStatuses = {};
 			this.branches = {};
+			this.dashboards = {};
 			this.loadCiStatuses();
+			this.loadDashboards();
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to load pull requests.';
 		} finally {
@@ -106,6 +111,32 @@ class PrStore {
 					this.ciStatuses = { ...this.ciStatuses, [pr.id]: status };
 				} catch {
 					// Ignore failures (e.g. rate limiting); simply omit the CI badge / branch.
+				}
+			})();
+		}
+	}
+
+	/**
+	 * Look up the preview dashboard credentials posted by CI on each live PR.
+	 * Most PRs have no such comment, in which case nothing is stored.
+	 */
+	private loadDashboards() {
+		const token = settings.current.token;
+
+		for (const pr of this.prs) {
+			const cat = prCategory(pr);
+			if (cat !== 'open' && cat !== 'drafts') continue;
+
+			(async () => {
+				try {
+					const access = await fetchDashboardAccess(
+						...(pr.repo.split('/') as [string, string]),
+						pr.number,
+						token
+					);
+					if (access) this.dashboards = { ...this.dashboards, [pr.id]: access };
+				} catch {
+					// Ignore failures; the dashboard buttons simply stay hidden.
 				}
 			})();
 		}

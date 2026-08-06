@@ -1,11 +1,37 @@
 <script lang="ts">
-	import { relativeTime, type PullRequest, type CiStatus } from "$lib/github";
+	import {
+		relativeTime,
+		type PullRequest,
+		type CiStatus,
+		type DashboardAccess,
+	} from "$lib/github";
 
 	let {
 		pr,
 		ci,
 		branch,
-	}: { pr: PullRequest; ci?: CiStatus; branch?: string } = $props();
+		dashboard,
+	}: {
+		pr: PullRequest;
+		ci?: CiStatus;
+		branch?: string;
+		dashboard?: DashboardAccess;
+	} = $props();
+
+	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copyPassword() {
+		if (!dashboard) return;
+		try {
+			await navigator.clipboard.writeText(dashboard.password);
+			copied = true;
+			clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => (copied = false), 1500);
+		} catch {
+			// Clipboard unavailable (e.g. insecure context); nothing to show.
+		}
+	}
 
 	function statusColor(pr: PullRequest): string {
 		if (pr.merged) return "var(--merged, #8957e5)";
@@ -140,6 +166,65 @@
 			{/if}
 		</a>
 		<span class="actions">
+			{#if dashboard}
+				<a
+					href={dashboard.url}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="action-btn icon-only dashboard"
+					title="Open preview dashboard"
+					aria-label="Open preview dashboard"
+				>
+					<svg
+						width="15"
+						height="15"
+						viewBox="0 0 16 16"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="1.5"
+					>
+						<circle cx="8" cy="8" r="6.25" />
+						<ellipse cx="8" cy="8" rx="3" ry="6.25" />
+						<path d="M1.9 6h12.2M1.9 10h12.2" stroke-linecap="round" />
+					</svg>
+				</a>
+				<button
+					type="button"
+					class="action-btn icon-only dashboard"
+					class:copied
+					title="Copy dashboard password"
+					aria-label="Copy dashboard password"
+					onclick={copyPassword}
+				>
+					{#if copied}
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 16 16"
+							fill="currentColor"
+						>
+							<path
+								d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z"
+							/>
+						</svg>
+					{:else}
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+						>
+							<rect x="5.75" y="5.75" width="8" height="8" rx="1.5" />
+							<path
+								d="M10.25 3.25a1.5 1.5 0 0 0-1.5-1.5h-5a1.5 1.5 0 0 0-1.5 1.5v5a1.5 1.5 0 0 0 1.5 1.5"
+								stroke-linecap="round"
+							/>
+						</svg>
+					{/if}
+				</button>
+			{/if}
 			<a href={detailHref} class="action-btn" title="View details">
 				Details
 			</a>
@@ -337,6 +422,25 @@
 
 	.action-btn.icon-only {
 		padding: 0.4rem;
+	}
+
+	button.action-btn {
+		cursor: pointer;
+		font-family: inherit;
+	}
+
+	.action-btn.dashboard {
+		color: var(--accent);
+		border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+	}
+
+	.action-btn.dashboard:hover {
+		background: color-mix(in oklch, var(--accent) 12%, transparent);
+	}
+
+	.action-btn.copied {
+		color: #1a7f37;
+		border-color: rgba(26, 127, 55, 0.5);
 	}
 
 	.updated-at {

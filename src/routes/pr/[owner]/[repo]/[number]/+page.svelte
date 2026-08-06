@@ -4,9 +4,11 @@
 	import {
 		fetchPullRequestDetail,
 		fetchCiStatus,
+		fetchDashboardAccess,
 		relativeTime,
 		type PullRequestDetail,
-		type CiStatus
+		type CiStatus,
+		type DashboardAccess
 	} from '$lib/github';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
@@ -48,6 +50,21 @@
 	let error = $state('');
 	let ci = $state<CiStatus | null>(null);
 	let ciLoading = $state(false);
+	let dashboard = $state<DashboardAccess | null>(null);
+	let copied = $state(false);
+	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copyPassword() {
+		if (!dashboard) return;
+		try {
+			await navigator.clipboard.writeText(dashboard.password);
+			copied = true;
+			clearTimeout(copyTimer);
+			copyTimer = setTimeout(() => (copied = false), 1500);
+		} catch {
+			// Clipboard unavailable (e.g. insecure context); nothing to show.
+		}
+	}
 
 	function statusLabel(pr: PullRequestDetail): string {
 		if (pr.merged) return 'Merged';
@@ -85,9 +102,11 @@
 		loading = true;
 		error = '';
 		ci = null;
+		dashboard = null;
 		try {
 			pr = await fetchPullRequestDetail(owner, repo, number, settings.current.token);
 			loadCi();
+			loadDashboard();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load pull request.';
 		} finally {
@@ -104,6 +123,15 @@
 			ci = null;
 		} finally {
 			ciLoading = false;
+		}
+	}
+
+	// The preview deployment comment is absent on most PRs; then the buttons stay hidden.
+	async function loadDashboard() {
+		try {
+			dashboard = await fetchDashboardAccess(owner, repo, number, settings.current.token);
+		} catch {
+			dashboard = null;
 		}
 	}
 
@@ -155,6 +183,40 @@
 					{#each pr.labels as label (label)}
 						<span class="label">{label}</span>
 					{/each}
+				</div>
+			{/if}
+
+			<a class="github-link" href={pr.url} target="_blank" rel="noopener noreferrer">
+				View on GitHub
+				<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+					<path d="M6 3.5H3.5v9h9V10M9.5 3.5h3v3M12 4L7 9" stroke-linecap="round" stroke-linejoin="round" />
+				</svg>
+			</a>
+
+			{#if dashboard}
+				<div class="dashboard-row">
+					<a class="dashboard-btn" href={dashboard.url} target="_blank" rel="noopener noreferrer">
+						<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+							<circle cx="8" cy="8" r="6.25" />
+							<ellipse cx="8" cy="8" rx="3" ry="6.25" />
+							<path d="M1.9 6h12.2M1.9 10h12.2" stroke-linecap="round" />
+						</svg>
+						Open deployment
+					</a>
+					<button type="button" class="dashboard-btn" class:copied onclick={copyPassword}>
+						{#if copied}
+							<svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+								<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z" />
+							</svg>
+							Copied
+						{:else}
+							<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+								<rect x="5.75" y="5.75" width="8" height="8" rx="1.5" />
+								<path d="M10.25 3.25a1.5 1.5 0 0 0-1.5-1.5h-5a1.5 1.5 0 0 0-1.5 1.5v5a1.5 1.5 0 0 0 1.5 1.5" stroke-linecap="round" />
+							</svg>
+							Copy password
+						{/if}
+					</button>
 				</div>
 			{/if}
 
@@ -241,13 +303,6 @@
 					{@html renderMarkdown(pr.body, owner, repo, pr.baseRef)}
 				</div>
 			{/if}
-
-			<a class="github-link" href={pr.url} target="_blank" rel="noopener noreferrer">
-				View on GitHub
-				<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-					<path d="M6 3.5H3.5v9h9V10M9.5 3.5h3v3M12 4L7 9" stroke-linecap="round" stroke-linejoin="round" />
-				</svg>
-			</a>
 		</article>
 	{/if}
 </main>
@@ -606,17 +661,61 @@
 	}
 
 	.github-link {
-		display: inline-flex;
+		display: flex;
 		align-items: center;
-		gap: 0.4rem;
-		color: var(--accent);
+		justify-content: center;
+		margin-top: 0.75rem;
+		gap: 0.5rem;
+		width: 100%;
+		padding: 0.85rem 1rem;
+		border-radius: 10px;
+		color: #fff;
+		background: var(--accent);
+		border: 1px solid var(--accent);
 		text-decoration: none;
-		font-weight: 500;
-		font-size: 0.92rem;
+		font-weight: 600;
+		font-size: 1rem;
+		transition: filter 0.12s;
 	}
 
 	.github-link:hover {
-		text-decoration: underline;
+		filter: brightness(1.1);
+	}
+
+	.dashboard-row {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.6rem;
+		margin-top: 0.6rem;
+	}
+
+	.dashboard-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
+		padding: 0.7rem 1rem;
+		border-radius: 10px;
+		font-family: inherit;
+		font-size: 0.92rem;
+		font-weight: 600;
+		cursor: pointer;
+		text-decoration: none;
+		color: var(--accent);
+		background: var(--surface);
+		border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+		transition:
+			background 0.12s,
+			color 0.12s;
+	}
+
+	.dashboard-btn:hover {
+		background: color-mix(in oklch, var(--accent) 12%, transparent);
+	}
+
+	.dashboard-btn.copied {
+		color: #1a7f37;
+		border-color: rgba(26, 127, 55, 0.5);
 	}
 
 	@media (max-width: 700px) {

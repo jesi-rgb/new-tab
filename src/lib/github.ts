@@ -372,6 +372,67 @@ export async function fetchPrHead(
 	return { sha: data.head.sha, ref: data.head.ref };
 }
 
+export type DashboardAccess = {
+	url: string;
+	password: string;
+};
+
+type IssueCommentResponse = {
+	body: string | null;
+}[];
+
+/**
+ * Parse the "Dashboard password" bot comment, whose body looks like:
+ *   ## 🔐 Dashboard password
+ *   https://…/auth/signin
+ *   ```
+ *   <password>
+ *   ```
+ */
+export function parseDashboardAccess(body: string): DashboardAccess | null {
+	const idx = body.indexOf('Dashboard password');
+	if (idx === -1) return null;
+
+	const rest = body.slice(idx);
+	const url = rest.match(/https?:\/\/\S+/)?.[0];
+	const password = rest.match(/```[^\n]*\n([\s\S]*?)\n?```/)?.[1]?.trim();
+	if (!url || !password) return null;
+
+	return { url, password };
+}
+
+/**
+ * Look for the bot comment carrying the preview dashboard URL + password.
+ * Returns null when no such comment exists (most PRs).
+ */
+export async function fetchDashboardAccess(
+	owner: string,
+	repo: string,
+	number: number,
+	token: string
+): Promise<DashboardAccess | null> {
+	const headers: Record<string, string> = {
+		Accept: 'application/vnd.github+json',
+		'X-GitHub-Api-Version': '2022-11-28'
+	};
+	if (token) headers.Authorization = `Bearer ${token}`;
+
+	const res = await fetch(
+		`https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`,
+		{ headers }
+	);
+	if (!res.ok) return null;
+
+	const comments = (await res.json()) as IssueCommentResponse;
+
+	// Walk newest first so redeploys that post a fresh password win.
+	for (let i = comments.length - 1; i >= 0; i--) {
+		const parsed = comments[i].body ? parseDashboardAccess(comments[i].body!) : null;
+		if (parsed) return parsed;
+	}
+	return null;
+}
+
 export function relativeTime(iso: string): string {
 	const then = new Date(iso).getTime();
 	const now = Date.now();
