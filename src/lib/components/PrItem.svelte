@@ -20,6 +20,8 @@
 
 	let copied = $state(false);
 	let copyTimer: ReturnType<typeof setTimeout> | undefined;
+	let promptCopied = $state(false);
+	let promptTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function copyPassword() {
 		if (!dashboard) return;
@@ -28,6 +30,32 @@
 			copied = true;
 			clearTimeout(copyTimer);
 			copyTimer = setTimeout(() => (copied = false), 1500);
+		} catch {
+			// Clipboard unavailable (e.g. insecure context); nothing to show.
+		}
+	}
+
+	// Build a Discord-markdown review request for this PR.
+	function reviewPrompt(): string {
+		if (!dashboard) return "";
+		return [
+			`\u{1F4DD} **${pr.title}** #${pr.number}`,
+			``,
+			`\u{1F310} [Preview deployment](${dashboard.url}) \u00b7 \u{1F4AC}[PR Link](${pr.url})`,
+			"Password:",
+			"```",
+			dashboard.password,
+			"```",
+		].join("\n");
+	}
+
+	async function copyReviewPrompt() {
+		if (!dashboard) return;
+		try {
+			await navigator.clipboard.writeText(reviewPrompt());
+			promptCopied = true;
+			clearTimeout(promptTimer);
+			promptTimer = setTimeout(() => (promptCopied = false), 1500);
 		} catch {
 			// Clipboard unavailable (e.g. insecure context); nothing to show.
 		}
@@ -185,7 +213,10 @@
 					>
 						<circle cx="8" cy="8" r="6.25" />
 						<ellipse cx="8" cy="8" rx="3" ry="6.25" />
-						<path d="M1.9 6h12.2M1.9 10h12.2" stroke-linecap="round" />
+						<path
+							d="M1.9 6h12.2M1.9 10h12.2"
+							stroke-linecap="round"
+						/>
 					</svg>
 				</a>
 				<button
@@ -216,9 +247,54 @@
 							stroke="currentColor"
 							stroke-width="1.5"
 						>
-							<rect x="5.75" y="5.75" width="8" height="8" rx="1.5" />
+							<rect
+								x="5.75"
+								y="5.75"
+								width="8"
+								height="8"
+								rx="1.5"
+							/>
 							<path
 								d="M10.25 3.25a1.5 1.5 0 0 0-1.5-1.5h-5a1.5 1.5 0 0 0-1.5 1.5v5a1.5 1.5 0 0 0 1.5 1.5"
+								stroke-linecap="round"
+							/>
+						</svg>
+					{/if}
+				</button>
+				<button
+					type="button"
+					class="action-btn icon-only dashboard"
+					class:copied={promptCopied}
+					title="Copy review request for Discord"
+					aria-label="Copy review request for Discord"
+					onclick={copyReviewPrompt}
+				>
+					{#if promptCopied}
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 16 16"
+							fill="currentColor"
+						>
+							<path
+								d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z"
+							/>
+						</svg>
+					{:else}
+						<svg
+							width="15"
+							height="15"
+							viewBox="0 0 16 16"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="1.5"
+						>
+							<path
+								d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3.5 2.75V4.5a1 1 0 0 1 1-1Z"
+								stroke-linejoin="round"
+							/>
+							<path
+								d="M5.5 6.5h5M5.5 8.75h3"
 								stroke-linecap="round"
 							/>
 						</svg>
