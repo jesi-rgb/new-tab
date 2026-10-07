@@ -3,54 +3,36 @@
 		relativeTime,
 		type PullRequest,
 		type CiStatus,
-		type DashboardAccess,
 	} from "$lib/github";
 
 	let {
 		pr,
 		ci,
 		branch,
-		dashboard,
+		dashboardUrl,
 	}: {
 		pr: PullRequest;
 		ci?: CiStatus;
 		branch?: string;
-		dashboard?: DashboardAccess;
+		dashboardUrl?: string;
 	} = $props();
 
-	let copied = $state(false);
-	let copyTimer: ReturnType<typeof setTimeout> | undefined;
 	let promptCopied = $state(false);
 	let promptTimer: ReturnType<typeof setTimeout> | undefined;
 
-	async function copyPassword() {
-		if (!dashboard) return;
-		try {
-			await navigator.clipboard.writeText(dashboard.password);
-			copied = true;
-			clearTimeout(copyTimer);
-			copyTimer = setTimeout(() => (copied = false), 1500);
-		} catch {
-			// Clipboard unavailable (e.g. insecure context); nothing to show.
-		}
-	}
-
-	// Build a Discord-markdown review request for this PR.
+	// Build a Discord-markdown review request for this PR. The preview link
+	// already carries the password as a query param, so nothing else to share.
 	function reviewPrompt(): string {
-		if (!dashboard) return "";
+		if (!dashboardUrl) return "";
 		return [
 			`\u{1F4DD} **${pr.title}** #${pr.number}`,
 			``,
-			`\u{1F310} [Preview deployment](${dashboard.url}) \u00b7 \u{1F4AC}[PR Link](${pr.url})`,
-			"Password:",
-			"```",
-			dashboard.password,
-			"```",
+			`\u{1F310} [Preview deployment](${dashboardUrl}) \u00b7 \u{1F4AC}[PR Link](${pr.url})`,
 		].join("\n");
 	}
 
 	async function copyReviewPrompt() {
-		if (!dashboard) return;
+		if (!dashboardUrl) return;
 		try {
 			await navigator.clipboard.writeText(reviewPrompt());
 			promptCopied = true;
@@ -194,9 +176,9 @@
 			{/if}
 		</a>
 		<span class="actions">
-			{#if dashboard}
+			{#if dashboardUrl}
 				<a
-					href={dashboard.url}
+					href={dashboardUrl}
 					target="_blank"
 					rel="noopener noreferrer"
 					class="action-btn icon-only dashboard"
@@ -219,48 +201,6 @@
 						/>
 					</svg>
 				</a>
-				<button
-					type="button"
-					class="action-btn icon-only dashboard"
-					class:copied
-					title="Copy dashboard password"
-					aria-label="Copy dashboard password"
-					onclick={copyPassword}
-				>
-					{#if copied}
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 16 16"
-							fill="currentColor"
-						>
-							<path
-								d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z"
-							/>
-						</svg>
-					{:else}
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 16 16"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.5"
-						>
-							<rect
-								x="5.75"
-								y="5.75"
-								width="8"
-								height="8"
-								rx="1.5"
-							/>
-							<path
-								d="M10.25 3.25a1.5 1.5 0 0 0-1.5-1.5h-5a1.5 1.5 0 0 0-1.5 1.5v5a1.5 1.5 0 0 0 1.5 1.5"
-								stroke-linecap="round"
-							/>
-						</svg>
-					{/if}
-				</button>
 				<button
 					type="button"
 					class="action-btn icon-only dashboard"

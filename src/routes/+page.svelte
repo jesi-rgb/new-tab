@@ -149,7 +149,7 @@
 					<ul class="pr-list review-list">
 						{#each prStore.reviewRequestedPrs as pr (pr.id)}
 							<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]}
-								dashboard={prStore.dashboards[pr.id]}
+								dashboardUrl={prStore.dashboardUrls[pr.id]}
 							/>
 						{/each}
 					</ul>
@@ -170,7 +170,7 @@
 				<ul class="pr-list">
 					{#each prStore.filteredPrs as pr (pr.id)}
 						<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]}
-								dashboard={prStore.dashboards[pr.id]}
+								dashboardUrl={prStore.dashboardUrls[pr.id]}
 							/>
 					{/each}
 				</ul>

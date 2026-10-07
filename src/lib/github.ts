@@ -372,45 +372,40 @@ export async function fetchPrHead(
 	return { sha: data.head.sha, ref: data.head.ref };
 }
 
-export type DashboardAccess = {
-	url: string;
-	password: string;
-};
-
 type IssueCommentResponse = {
 	body: string | null;
 }[];
 
+// The deploy bot marks its comment with this HTML comment; the visible heading
+// is "## 🔐 Dashboard".
+const DASHBOARD_MARKER = '<!-- access password -->';
+
+// The sign-in link carries the password as a query param. Stop at characters
+// that can only come from the surrounding markdown (backtick, pipe, paren).
+const SIGNIN_URL = /https?:\/\/[^\s)|`]*[?&]password=[^\s)|`]+/;
+
 /**
- * Parse the "Dashboard password" bot comment, whose body looks like:
- *   ## 🔐 Dashboard password
- *   https://…/auth/signin
- *   ```
- *   <password>
- *   ```
+ * Pull the ready-to-open dashboard URL out of the bot comment, whose body
+ * looks like:
+ *   <!-- access password -->
+ *   ## 🔐 Dashboard
+ *   https://…/auth/signin?password=<password>
  */
-export function parseDashboardAccess(body: string): DashboardAccess | null {
-	const idx = body.indexOf('Dashboard password');
-	if (idx === -1) return null;
-
-	const rest = body.slice(idx);
-	const url = rest.match(/https?:\/\/\S+/)?.[0];
-	const password = rest.match(/```[^\n]*\n([\s\S]*?)\n?```/)?.[1]?.trim();
-	if (!url || !password) return null;
-
-	return { url, password };
+export function parseDashboardUrl(body: string): string | null {
+	if (!body.includes(DASHBOARD_MARKER)) return null;
+	return body.match(SIGNIN_URL)?.[0] ?? null;
 }
 
 /**
- * Look for the bot comment carrying the preview dashboard URL + password.
+ * Look for the bot comment carrying the preview dashboard URL.
  * Returns null when no such comment exists (most PRs).
  */
-export async function fetchDashboardAccess(
+export async function fetchDashboardUrl(
 	owner: string,
 	repo: string,
 	number: number,
 	token: string
-): Promise<DashboardAccess | null> {
+): Promise<string | null> {
 	const headers: Record<string, string> = {
 		Accept: 'application/vnd.github+json',
 		'X-GitHub-Api-Version': '2022-11-28'
@@ -425,9 +420,9 @@ export async function fetchDashboardAccess(
 
 	const comments = (await res.json()) as IssueCommentResponse;
 
-	// Walk newest first so redeploys that post a fresh password win.
+	// Walk newest first so redeploys that post a fresh URL win.
 	for (let i = comments.length - 1; i >= 0; i--) {
-		const parsed = comments[i].body ? parseDashboardAccess(comments[i].body!) : null;
+		const parsed = comments[i].body ? parseDashboardUrl(comments[i].body!) : null;
 		if (parsed) return parsed;
 	}
 	return null;

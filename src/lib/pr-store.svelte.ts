@@ -2,14 +2,13 @@ import {
 	fetchPullRequests,
 	fetchPrHead,
 	fetchCiStatus,
-	fetchDashboardAccess,
+	fetchDashboardUrl,
 	computeStats,
 	prCategory,
 	type PullRequest,
 	type PullRequestStats,
 	type PrCategory,
-	type CiStatus,
-	type DashboardAccess
+	type CiStatus
 } from './github';
 import { settings } from './settings.svelte';
 
@@ -23,7 +22,7 @@ class PrStore {
 	repoFilter = $state<string | null>(null);
 	ciStatuses = $state<Record<number, CiStatus | undefined>>({});
 	branches = $state<Record<number, string | undefined>>({});
-	dashboards = $state<Record<number, DashboardAccess | undefined>>({});
+	dashboardUrls = $state<Record<number, string | undefined>>({});
 
 	repoList = $derived.by(() => {
 		const seen = new Set<string>();
@@ -76,9 +75,9 @@ class PrStore {
 			this.lastLoaded = Date.now();
 			this.ciStatuses = {};
 			this.branches = {};
-			this.dashboards = {};
+			this.dashboardUrls = {};
 			this.loadCiStatuses();
-			this.loadDashboards();
+			this.loadDashboardUrls();
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to load pull requests.';
 		} finally {
@@ -117,10 +116,10 @@ class PrStore {
 	}
 
 	/**
-	 * Look up the preview dashboard credentials posted by CI on each live PR.
+	 * Look up the preview dashboard link posted by CI on each live PR.
 	 * Most PRs have no such comment, in which case nothing is stored.
 	 */
-	private loadDashboards() {
+	private loadDashboardUrls() {
 		const token = settings.current.token;
 
 		for (const pr of this.prs) {
@@ -129,14 +128,14 @@ class PrStore {
 
 			(async () => {
 				try {
-					const access = await fetchDashboardAccess(
+					const url = await fetchDashboardUrl(
 						...(pr.repo.split('/') as [string, string]),
 						pr.number,
 						token
 					);
-					if (access) this.dashboards = { ...this.dashboards, [pr.id]: access };
+					if (url) this.dashboardUrls = { ...this.dashboardUrls, [pr.id]: url };
 				} catch {
-					// Ignore failures; the dashboard buttons simply stay hidden.
+					// Ignore failures; the dashboard button simply stays hidden.
 				}
 			})();
 		}
