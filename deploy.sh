@@ -17,7 +17,10 @@ INSTANCE_NAME="new-tab"
 METRO="fra"
 IMAGE="jesi-rgb/new-tab:latest"
 DOMAIN="new-tab"
+PROFILE="jesi-rgb"
 
+echo "Switching to $PROFILE..."
+unikraft profile use $PROFILE
 # Create the service if it doesn't exist yet.
 # The service holds the stable domain — only needs to run once.
 if ! unikraft services list -o quiet 2>/dev/null | grep -q "/$SERVICE_NAME$"; then
