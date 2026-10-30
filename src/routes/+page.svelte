@@ -149,7 +149,7 @@
 					<ul class="pr-list review-list">
 						{#each prStore.reviewRequestedPrs as pr (pr.id)}
 							<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]}
-								dashboardUrl={prStore.dashboardUrls[pr.id]}
+								dashboardUrl={prStore.dashboardUrls[pr.id]} stamped={prStore.stamped[pr.id]}
 							/>
 						{/each}
 					</ul>
@@ -170,7 +170,7 @@
 				<ul class="pr-list">
 					{#each prStore.filteredPrs as pr (pr.id)}
 						<PrItem {pr} ci={prStore.ciStatuses[pr.id]} branch={prStore.branches[pr.id]}
-								dashboardUrl={prStore.dashboardUrls[pr.id]}
+								dashboardUrl={prStore.dashboardUrls[pr.id]} stamped={prStore.stamped[pr.id]}
 							/>
 					{/each}
 				</ul>
@@ -188,7 +188,7 @@
 
 <style>
 	main {
-		max-width: 1240px;
+		max-width: 1600px;
 		margin: 0 auto;
 		padding: 2rem 2.5rem 4rem;
 		transition: filter 0.2s;

@@ -396,6 +396,15 @@ export function parseDashboardUrl(body: string): string | null {
 	return body.match(SIGNIN_URL)?.[0] ?? null;
 }
 
+function githubHeaders(token: string): Record<string, string> {
+	const headers: Record<string, string> = {
+		Accept: 'application/vnd.github+json',
+		'X-GitHub-Api-Version': '2022-11-28'
+	};
+	if (token) headers.Authorization = `Bearer ${token}`;
+	return headers;
+}
+
 /**
  * Look for the bot comment carrying the preview dashboard URL.
  * Returns null when no such comment exists (most PRs).
@@ -406,15 +415,9 @@ export async function fetchDashboardUrl(
 	number: number,
 	token: string
 ): Promise<string | null> {
-	const headers: Record<string, string> = {
-		Accept: 'application/vnd.github+json',
-		'X-GitHub-Api-Version': '2022-11-28'
-	};
-	if (token) headers.Authorization = `Bearer ${token}`;
-
 	const res = await fetch(
 		`https://api.github.com/repos/${owner}/${repo}/issues/${number}/comments?per_page=100`,
-		{ headers }
+		{ headers: githubHeaders(token) }
 	);
 	if (!res.ok) return null;
 
@@ -426,6 +429,39 @@ export async function fetchDashboardUrl(
 		if (parsed) return parsed;
 	}
 	return null;
+}
+
+type PullReviewResponse = {
+	body: string | null;
+}[];
+
+// Teammates stamp a PR by submitting a review whose body carries both
+// trailers, e.g. "Reviewed-by: Name <email>" and "Approved-by: Name <email>".
+const REVIEWED_BY = /reviewed-by/i;
+const APPROVED_BY = /approved-by/i;
+
+export function isStampBody(body: string): boolean {
+	return REVIEWED_BY.test(body) && APPROVED_BY.test(body);
+}
+
+/**
+ * Whether any submitted review on the PR carries a reviewed-by + approved-by
+ * stamp. Plain PR comments never count.
+ */
+export async function fetchStamped(
+	owner: string,
+	repo: string,
+	number: number,
+	token: string
+): Promise<boolean> {
+	const res = await fetch(
+		`https://api.github.com/repos/${owner}/${repo}/pulls/${number}/reviews?per_page=100`,
+		{ headers: githubHeaders(token) }
+	);
+	if (!res.ok) return false;
+
+	const reviews = (await res.json()) as PullReviewResponse;
+	return reviews.some((r) => r.body && isStampBody(r.body));
 }
 
 export function relativeTime(iso: string): string {

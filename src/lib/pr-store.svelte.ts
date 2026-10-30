@@ -3,6 +3,7 @@ import {
 	fetchPrHead,
 	fetchCiStatus,
 	fetchDashboardUrl,
+	fetchStamped,
 	computeStats,
 	prCategory,
 	type PullRequest,
@@ -23,6 +24,7 @@ class PrStore {
 	ciStatuses = $state<Record<number, CiStatus | undefined>>({});
 	branches = $state<Record<number, string | undefined>>({});
 	dashboardUrls = $state<Record<number, string | undefined>>({});
+	stamped = $state<Record<number, boolean | undefined>>({});
 
 	repoList = $derived.by(() => {
 		const seen = new Set<string>();
@@ -76,8 +78,9 @@ class PrStore {
 			this.ciStatuses = {};
 			this.branches = {};
 			this.dashboardUrls = {};
+			this.stamped = {};
 			this.loadCiStatuses();
-			this.loadDashboardUrls();
+			this.loadDashboardUrlsAndStamps();
 		} catch (e) {
 			this.error = e instanceof Error ? e.message : 'Failed to load pull requests.';
 		} finally {
@@ -116,28 +119,29 @@ class PrStore {
 	}
 
 	/**
-	 * Look up the preview dashboard link posted by CI on each live PR.
-	 * Most PRs have no such comment, in which case nothing is stored.
+	 * For each live PR, look up the preview dashboard link posted by CI (PR
+	 * comments) and the reviewed-by + approved-by stamp (review bodies).
+	 * Each lookup lands independently; failures just leave that bit hidden.
 	 */
-	private loadDashboardUrls() {
+	private loadDashboardUrlsAndStamps() {
 		const token = settings.current.token;
 
 		for (const pr of this.prs) {
 			const cat = prCategory(pr);
 			if (cat !== 'open' && cat !== 'drafts') continue;
+			const [owner, repo] = pr.repo.split('/') as [string, string];
 
-			(async () => {
-				try {
-					const url = await fetchDashboardUrl(
-						...(pr.repo.split('/') as [string, string]),
-						pr.number,
-						token
-					);
+			fetchDashboardUrl(owner, repo, pr.number, token)
+				.then((url) => {
 					if (url) this.dashboardUrls = { ...this.dashboardUrls, [pr.id]: url };
-				} catch {
-					// Ignore failures; the dashboard button simply stays hidden.
-				}
-			})();
+				})
+				.catch(() => {});
+
+			fetchStamped(owner, repo, pr.number, token)
+				.then((stamped) => {
+					if (stamped) this.stamped = { ...this.stamped, [pr.id]: true };
+				})
+				.catch(() => {});
 		}
 	}
 }

@@ -1,5 +1,15 @@
 <script lang="ts">
 	import {
+		BadgeCheck,
+		Check,
+		CirclePlay,
+		CloudCheck,
+		ExternalLink,
+		GitBranch,
+		Globe,
+		MessageSquareText,
+	} from "@lucide/svelte";
+	import {
 		relativeTime,
 		type PullRequest,
 		type CiStatus,
@@ -10,15 +20,28 @@
 		ci,
 		branch,
 		dashboardUrl,
+		stamped = false,
 	}: {
 		pr: PullRequest;
 		ci?: CiStatus;
 		branch?: string;
 		dashboardUrl?: string;
+		stamped?: boolean;
 	} = $props();
 
-	let promptCopied = $state(false);
-	let promptTimer: ReturnType<typeof setTimeout> | undefined;
+	let copied = $state<"prompt" | "branch" | null>(null);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function copy(text: string, what: "prompt" | "branch") {
+		try {
+			await navigator.clipboard.writeText(text);
+			copied = what;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = null), 1500);
+		} catch {
+			// Clipboard unavailable (e.g. insecure context); nothing to show.
+		}
+	}
 
 	// Build a Discord-markdown review request for this PR. The preview link
 	// already carries the password as a query param, so nothing else to share.
@@ -29,18 +52,6 @@
 			``,
 			`\u{1F310} [Preview deployment](${dashboardUrl}) \u00b7 \u{1F4AC}[PR Link](${pr.url})`,
 		].join("\n");
-	}
-
-	async function copyReviewPrompt() {
-		if (!dashboardUrl) return;
-		try {
-			await navigator.clipboard.writeText(reviewPrompt());
-			promptCopied = true;
-			clearTimeout(promptTimer);
-			promptTimer = setTimeout(() => (promptCopied = false), 1500);
-		} catch {
-			// Clipboard unavailable (e.g. insecure context); nothing to show.
-		}
 	}
 
 	function statusColor(pr: PullRequest): string {
@@ -84,190 +95,137 @@
 	}
 
 	const detailHref = $derived(`/pr/${pr.repo}/${pr.number}`);
+
+	// Mergeable on our terms: stamped by a teammate's review and every check green.
+	const mergeable = $derived(stamped && ci?.state === "success");
 </script>
 
 <li class="pr">
 	<div class="row">
-		<span class="pr-icon" style:color={statusColor(pr)} aria-hidden="true">
-			<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-				<path
-					d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
-				/>
-			</svg>
-		</span>
-		<a href={detailHref} class="body">
-			<span class="title-row">
-				<span class="title">{pr.title}</span>
-				{#if ci && ci.state !== "none"}
-					<span class="ci-badge ci-{ci.state}" title={ciLabel(ci)}>
-						{#if ci.state === "success"}
-							<svg
-								width="13"
-								height="13"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-							>
-								<path
-									d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z"
-								/>
-							</svg>
-						{:else if ci.state === "failure"}
-							<svg
-								width="13"
-								height="13"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-							>
-								<path
-									d="M2.343 13.657A8 8 0 1 1 13.657 2.343 8 8 0 0 1 2.343 13.657ZM6.03 4.97a.75.75 0 0 0-1.06 1.06L6.94 8l-1.97 1.97a.75.75 0 1 0 1.06 1.06L8 9.06l1.97 1.97a.75.75 0 1 0 1.06-1.06L9.06 8l1.97-1.97a.75.75 0 1 0-1.06-1.06L8 6.94Z"
-								/>
-							</svg>
-						{:else}
-							<svg
-								width="13"
-								height="13"
-								viewBox="0 0 16 16"
-								fill="currentColor"
-							>
-								<path
-									d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm.75 4v4.25l3 1.5-.75 1.5-3.75-1.9V4h1.5Z"
-								/>
-							</svg>
-						{/if}
-						{ciLabel(ci)}
-					</span>
-				{/if}
+		<div class="main">
+			<span class="pr-icon" style:color={statusColor(pr)} aria-hidden="true">
+				<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+					{#if pr.draft && pr.state === "open"}
+						<!-- Octicon git-pull-request-draft-16 -->
+						<path
+							d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z"
+						/>
+					{:else}
+						<!-- Octicon git-pull-request-16 -->
+						<path
+							d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"
+						/>
+					{/if}
+				</svg>
 			</span>
-			<span class="sub">
-				<span
-					class="repo-pill"
-					style:background={repoColor(pr.repo, 0.14)}
-					style:border-color={repoColor(pr.repo, 0.6)}
-					style:color={repoColor(pr.repo)}
-				>
-					{repoName(pr.repo)}
-				</span>
-				<span>·</span>
-				<span class="sub-sep pr-number">#{pr.number}</span>
-				<span>·</span>
-				{#if branch}
-					<span class="sub-sep branch">
-						<svg
-							width="12"
-							height="12"
-							viewBox="0 0 16 16"
-							fill="currentColor"
-							aria-hidden="true"
+			<div class="body">
+				<span class="meta-row">
+					<span
+						class="repo-pill"
+						style:background={repoColor(pr.repo, 0.14)}
+						style:border-color={repoColor(pr.repo, 0.6)}
+						style:color={repoColor(pr.repo)}
+					>
+						{repoName(pr.repo)}
+					</span>
+					{#if ci && ci.state !== "none"}
+						<span
+							class="indicator ci-{ci.state}"
+							title={ciLabel(ci)}
+							aria-label={ciLabel(ci)}
 						>
-							<path
-								d="M11.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm-2.25.75a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM3.5 3.25a.75.75 0 1 1 1.5 0 .75.75 0 0 1-1.5 0Z"
-							/>
-						</svg>
-						{branch}
+							<CirclePlay size={20} />
+						</span>
+					{/if}
+					{#if stamped}
+						<span
+							class="indicator stamp"
+							title="Reviewed-by and Approved-by"
+							aria-label="Reviewed and approved"
+						>
+							<BadgeCheck size={20} />
+						</span>
+					{/if}
+					{#if mergeable}
+						<span
+							class="indicator mergeable"
+							title="Mergeable: stamped and CI passing"
+							aria-label="Mergeable"
+						>
+							<CloudCheck size={20} />
+						</span>
+					{/if}
+				</span>
+				<span class="title-row">
+					<a href={detailHref} class="title">{pr.title}</a>
+				</span>
+				<span class="sub">
+					<span class="sub-sep pr-number">#{pr.number}</span>
+					<span>·</span>
+					{#if branch}
+						<button
+							type="button"
+							class="sub-sep branch"
+							class:copied={copied === "branch"}
+							title="Copy branch name"
+							onclick={() => copy(branch, "branch")}
+						>
+							{#if copied === "branch"}
+								<Check size={12} strokeWidth={2.5} />
+							{:else}
+								<GitBranch size={12} />
+							{/if}
+							{branch}
+						</button>
+					{/if}
+				</span>
+				{#if pr.labels.length > 0}
+					<span class="labels">
+						{#each pr.labels.slice(0, 4) as label (label)}
+							<span class="label">{label}</span>
+						{/each}
 					</span>
 				{/if}
-			</span>
-			{#if pr.labels.length > 0}
-				<span class="labels">
-					{#each pr.labels.slice(0, 4) as label (label)}
-						<span class="label">{label}</span>
-					{/each}
-				</span>
-			{/if}
-		</a>
-		<span class="actions">
+			</div>
+		</div>
+		<div class="actions">
 			{#if dashboardUrl}
 				<a
 					href={dashboardUrl}
 					target="_blank"
 					rel="noopener noreferrer"
-					class="action-btn icon-only dashboard"
+					class="action-btn dashboard"
 					title="Open preview dashboard"
 					aria-label="Open preview dashboard"
 				>
-					<svg
-						width="15"
-						height="15"
-						viewBox="0 0 16 16"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-					>
-						<circle cx="8" cy="8" r="6.25" />
-						<ellipse cx="8" cy="8" rx="3" ry="6.25" />
-						<path
-							d="M1.9 6h12.2M1.9 10h12.2"
-							stroke-linecap="round"
-						/>
-					</svg>
+					<Globe size={20} />
 				</a>
 				<button
 					type="button"
-					class="action-btn icon-only dashboard"
-					class:copied={promptCopied}
+					class="action-btn dashboard"
+					class:copied={copied === "prompt"}
 					title="Copy review request for Discord"
 					aria-label="Copy review request for Discord"
-					onclick={copyReviewPrompt}
+					onclick={() => copy(reviewPrompt(), "prompt")}
 				>
-					{#if promptCopied}
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 16 16"
-							fill="currentColor"
-						>
-							<path
-								d="M13.78 4.22a.75.75 0 0 1 0 1.06l-6.5 6.5a.75.75 0 0 1-1.06 0l-3.25-3.25a.75.75 0 1 1 1.06-1.06L6.5 10.94l5.97-5.97a.75.75 0 0 1 1.06 0Z"
-							/>
-						</svg>
+					{#if copied === "prompt"}
+						<Check size={20} />
 					{:else}
-						<svg
-							width="15"
-							height="15"
-							viewBox="0 0 16 16"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="1.5"
-						>
-							<path
-								d="M2.5 3.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H6l-3.5 2.75V4.5a1 1 0 0 1 1-1Z"
-								stroke-linejoin="round"
-							/>
-							<path
-								d="M5.5 6.5h5M5.5 8.75h3"
-								stroke-linecap="round"
-							/>
-						</svg>
+						<MessageSquareText size={20} />
 					{/if}
 				</button>
 			{/if}
-			<a href={detailHref} class="action-btn" title="View details">
-				Details
-			</a>
 			<a
 				href={pr.url}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="action-btn icon-only"
+				class="action-btn"
 				title="Open on GitHub"
 				aria-label="Open on GitHub"
 			>
-				<svg
-					width="15"
-					height="15"
-					viewBox="0 0 16 16"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-				>
-					<path
-						d="M6 3.5H3.5v9h9V10M9.5 3.5h3v3M12 4L7 9"
-						stroke-linecap="round"
-						stroke-linejoin="round"
-					/>
-				</svg>
+				<ExternalLink size={20} />
 			</a>
-		</span>
+		</div>
 	</div>
 </li>
 
@@ -278,9 +236,7 @@
 
 	.row {
 		display: flex;
-		align-items: flex-start;
-		gap: 0.9rem;
-		padding: 1.15rem 1.35rem;
+		align-items: stretch;
 		border-bottom: 1px solid var(--border);
 		transition: background 0.12s;
 	}
@@ -293,8 +249,23 @@
 		background: var(--surface-hover);
 	}
 
+	/* Positioning context for the title's stretched link (see .title::after). */
+	.main {
+		/* Height of the repo pill row: 0.62rem × 1.4 line height + 2px border. */
+		--meta-h: calc(0.62rem * 1.4 + 2px);
+		position: relative;
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		align-items: flex-start;
+		gap: 0.9rem;
+		padding: 1.15rem 1.35rem;
+	}
+
 	.pr-icon {
-		margin-top: 0.15rem;
+		/* Skip past the repo pill row and the body gap (0.3rem) so the icon
+		   lines up with the title. */
+		margin-top: calc(0.15rem + var(--meta-h) + 0.3rem);
 		flex-shrink: 0;
 	}
 
@@ -304,8 +275,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.3rem;
-		text-decoration: none;
-		color: inherit;
 	}
 
 	.title {
@@ -313,9 +282,21 @@
 		font-weight: 600;
 		letter-spacing: -0.01em;
 		color: var(--text);
+		text-decoration: none;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	/* Make the whole row body open the detail page, not just the title text. */
+	.title::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+	}
+
+	.main:hover .title {
+		text-decoration: underline;
 	}
 
 	.title-row {
@@ -329,34 +310,35 @@
 		min-width: 0;
 	}
 
-	.ci-badge {
-		display: inline-flex;
+	/* Pinned to the pill's height; larger indicator icons overflow it
+	   vertically instead of growing the row, keeping .pr-icon aligned. */
+	.meta-row {
+		display: flex;
 		align-items: center;
-		gap: 0.3rem;
+		height: var(--meta-h);
+		gap: 0.45rem;
+	}
+
+	/* Sits above the stretched title link so its tooltip is reachable. */
+	.indicator {
+		position: relative;
+		z-index: 1;
+		display: inline-flex;
 		flex-shrink: 0;
-		font-size: 0.76rem;
-		font-weight: 600;
-		padding: 0.15rem 0.5rem;
-		border-radius: 999px;
 	}
 
-	.ci-badge.ci-success {
+	.indicator.ci-success,
+	.indicator.stamp,
+	.indicator.mergeable {
 		color: #1a7f37;
-		background: rgba(26, 127, 55, 0.12);
 	}
 
-	.ci-badge.ci-failure {
+	.indicator.ci-failure {
 		color: #cf222e;
-		background: rgba(207, 34, 46, 0.12);
 	}
 
-	.ci-badge.ci-pending {
-		color: #9a6700;
-		background: rgba(154, 103, 0, 0.12);
-	}
-
-	.body:hover .title {
-		text-decoration: underline;
+	.indicator.ci-pending {
+		color: #bc4c00;
 	}
 
 	.sub {
@@ -369,9 +351,11 @@
 	}
 
 	.repo-pill {
-		font-size: 0.76rem;
+		font-size: 0.62rem;
 		font-weight: 800;
-		padding: 0.1rem 0.55rem;
+		line-height: 1.4;
+		letter-spacing: 0.02em;
+		padding: 0 0.4rem;
 		border-radius: 999px;
 		border: 1px solid var(--border-strong);
 	}
@@ -385,10 +369,33 @@
 		font-weight: 600;
 	}
 
+	/* Sits above the stretched title link so clicks copy instead of navigating. */
 	.branch {
+		position: relative;
+		z-index: 1;
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
+		font: inherit;
+		color: inherit;
+		background: none;
+		border: none;
+		border-radius: 6px;
+		padding: 0.05rem 0.3rem;
+		margin: -0.05rem -0.3rem;
+		cursor: copy;
+		transition:
+			background 0.12s,
+			color 0.12s;
+	}
+
+	.branch:hover {
+		color: var(--text);
+		background: var(--border);
+	}
+
+	.branch.copied {
+		color: #1a7f37;
 	}
 
 	.labels {
@@ -406,26 +413,25 @@
 		border-radius: 6px;
 	}
 
+	/* Full-height square buttons, flush against each other and the row edge. */
 	.actions {
 		display: flex;
-		align-items: center;
-		gap: 0.4rem;
 		flex-shrink: 0;
-		margin-top: 0.05rem;
 	}
 
 	.action-btn {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.35rem;
+		display: grid;
+		place-items: center;
+		/* Fixed width = height of a one-line row, so buttons line up across rows;
+		   taller rows (wrapped branch, labels) only stretch them vertically. */
+		width: 6.1875rem;
+		padding: 0;
 		text-decoration: none;
-		font-size: 0.85rem;
-		font-weight: 500;
 		color: var(--text-muted);
-		background: var(--surface);
-		border: 1px solid var(--border-strong);
-		border-radius: 8px;
-		padding: 0.4rem 0.7rem;
+		background: none;
+		border: none;
+		border-left: 1px solid var(--border);
+		border-radius: 0;
 		transition:
 			background 0.12s,
 			color 0.12s;
@@ -436,10 +442,6 @@
 		background: var(--surface-hover);
 	}
 
-	.action-btn.icon-only {
-		padding: 0.4rem;
-	}
-
 	button.action-btn {
 		cursor: pointer;
 		font-family: inherit;
@@ -447,7 +449,6 @@
 
 	.action-btn.dashboard {
 		color: var(--accent);
-		border-color: color-mix(in oklch, var(--accent) 40%, transparent);
 	}
 
 	.action-btn.dashboard:hover {
@@ -456,7 +457,6 @@
 
 	.action-btn.copied {
 		color: #1a7f37;
-		border-color: rgba(26, 127, 55, 0.5);
 	}
 
 	.updated-at {
